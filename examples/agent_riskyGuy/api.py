@@ -19,7 +19,7 @@ from llama_stack_client.types.agent_create_params import AgentConfig
 
 from termcolor import colored
 
-from .utils import data_url_from_file
+from .utils import data_url_from_file, check_model_is_available, get_any_available_model
 
 load_dotenv()
 
@@ -29,7 +29,7 @@ class AgentChoice(Enum):
     Memory = "Memory"
 
 
-class AgentStore:
+class Credpol:
     def __init__(self, host, port) -> None:
         self.client = LlamaStackClient(base_url=f"http://{host}:{port}")
         available_models = [
@@ -225,7 +225,7 @@ class AgentStore:
         if attachments is not None:
             for attachment in attachments:
                 atts.append(
-                    Document(
+                    Attachment(
                         content=data_url_from_file(attachment),
                         # hardcoded for now since mimetype is inferred from data_url
                         mime_type="text/plain",
