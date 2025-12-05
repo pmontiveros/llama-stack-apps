@@ -228,7 +228,17 @@ else:
     print(f"Available shields found: {available_shields}")
 
 
-
+## Custom Tool para identificar la intención del usuario
+import random
+def identificar_intencion(user_prompt:str) -> int:
+    #Versión Mock
+    """
+        Identifica la intención del usuario.
+        :param user_prompt: Pregunta del usuario
+        :return: La intención del usuario que puede ser  una Consulta, una Solicitud o un Reclamao]
+    """
+    opciones = ["Reclamo", "Consulta", "Solicitud"]
+    return random.choice(opciones)
 
 
 # Creación  del Agente
