@@ -59,6 +59,130 @@ client.tool_runtime.rag_tool.insert(
 )
 
 
+## simple rag query
+
+import re
+import textwrap
+from termcolor import colored
+from pprint import pprint
+
+
+def _clean_text(text: str) -> str:
+    if not text:
+        return ""
+    # Normalizar saltos de línea
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    # Reemplazar tabs por espacios
+    text = text.replace("\t", " ")
+    # Colapsar espacios repetidos
+    text = re.sub(r"[ ]{2,}", " ", text)
+    # Colapsar más de 2 saltos de línea seguidos
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _pretty_print_chunk(content: str, width: int = 100, indent: str = "  ") -> None:
+    content = _clean_text(content)
+    if not content:
+        print(indent + "[Sin contenido]")
+        return
+
+    wrapped = textwrap.fill(content, width=width)
+    for line in wrapped.splitlines():
+        print(indent + line)
+
+# rag query function
+def simple_rag_query(question: str, debug: bool = False):
+    """
+    Hace una consulta directa al vector DB y muestra los chunks recuperados
+    de forma ordenada y legible.
+    Soporta distintas versiones del schema de respuesta de rag_tool.query.
+    """
+    print(colored("\n=== PREGUNTA ===", "green", attrs=["bold"]))
+    print(question)
+
+    result = client.tool_runtime.rag_tool.query(
+        vector_db_ids=[vector_db_id],
+        content=question,
+    )
+
+    if debug:
+        print(colored("\n=== RESULTADO CRUDO (DEBUG) ===", "yellow", attrs=["bold"]))
+        pprint(result)
+
+    # ---- Interpretar respuesta de forma robusta ----
+    hits = None
+
+    # 1) Caso Red Hat / LlamaStack actual: result.content (lista de items con .text)
+    if hasattr(result, "content"):
+        hits = result.content
+
+    # 2) Caso anterior: result.results
+    if hits is None and hasattr(result, "results"):
+        hits = result.results
+
+    # 3) Caso dict
+    if hits is None and isinstance(result, dict):
+        hits = result.get("content") or result.get("results")
+
+    # 4) Caso lista directamente
+    if hits is None and isinstance(result, list):
+        hits = result
+
+    if not hits:
+        print(colored("\n[WARN] No se encontraron resultados RAG]", "yellow"))
+        return
+
+    # ---- Extraer contenido y score (si existe) ----
+    processed_hits = []
+
+    for idx, hit in enumerate(hits):
+        content = None
+        score = None
+
+        # Objeto con atributos (lo más probable)
+        if hasattr(hit, "text"):          # TextContentItem(text=...)
+            content = hit.text
+        elif hasattr(hit, "content"):     # Algunos schemas usan .content
+            content = hit.content
+
+        if hasattr(hit, "score"):
+            score = hit.score
+
+        # Dict
+        if content is None and isinstance(hit, dict):
+            content = hit.get("text") or hit.get("content")
+            score = hit.get("score", score)
+
+        if content is None:
+            continue
+
+        processed_hits.append(
+            {
+                "content": str(content),
+                # Si no hay score, usamos el índice como “score” (mantiene el orden)
+                "score": float(score) if score is not None else float(len(hits) - idx),
+            }
+        )
+
+    if not processed_hits:
+        print(colored("\n[WARN] No se pudo extraer contenido de los resultados]", "yellow"))
+        return
+
+    # Ordenar por score desc (si no hay score real, mantiene el orden original)
+    processed_hits.sort(key=lambda x: x["score"], reverse=True)
+
+    print(colored("\n=== CHUNKS RECUPERADOS (ordenados por score) ===", "cyan", attrs=["bold"]))
+
+    for i, hit in enumerate(processed_hits, start=1):
+        print(colored(f"\n--- Chunk #{i} (score={hit['score']:.4f}) ---", "cyan"))
+        _pretty_print_chunk(hit["content"])
+
+
+# Ejemplos de uso (adaptalos al contenido real de Politicas.txt)
+simple_rag_query("¿Qué restricciones existen para solicitar unidades de cariño?", debug=False)
+#simple_rag_query("¿Qué pasa si el empleado se atrasa en los pagos?", debug=False)
+
 ## Custom Tool para identificar la intención del usuario
 import random
 def identificar_intencion(user_prompt:str) -> int:
@@ -72,15 +196,17 @@ def identificar_intencion(user_prompt:str) -> int:
     return random.choice(opciones)
     
    
+## Listar modelos
 
-## Verificación de escudos y Seleccción del modelo.
-available_shields = [shield.identifier for shield in client.shields.list()]
-if not available_shields:
-    print(colored("No available shields. Disabling safety.", "yellow"))
-else:
-    print(f"Available shields found: {available_shields}")
+from rich.pretty import pprint
 
-model_id= None
+print("Available models:")
+for m in client.models.list():
+    print(f"- {m.identifier}")
+
+
+## Seleccción del modelo.
+model_id= "accounts/fireworks/models/llama-v3p3-70b-instruct"
 
 if model_id is None:
     model_id = get_any_available_model(client)
@@ -91,6 +217,18 @@ else:
         sys.exit("El modelo no esta disponible")
 
 print(f"Using model: {model_id}")
+
+
+
+## Verificación de escudos y Seleccción del modelo.
+available_shields = [shield.identifier for shield in client.shields.list()]
+if not available_shields:
+    print(colored("No available shields. Disabling safety.", "yellow"))
+else:
+    print(f"Available shields found: {available_shields}")
+
+
+
 
 
 # Creación  del Agente
